@@ -1,8 +1,9 @@
 
 import React, { useState } from 'react';
 import { Exam, StudentResult, QuestionType, Question, MatchingPair } from '../types';
-import { Plus, Trash2, Edit3, QrCode, ClipboardList, ChevronRight, X, Save, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Edit3, QrCode, ClipboardList, ChevronRight, X, Save, AlertCircle, Sparkles, Loader2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { GoogleGenAI, Type } from "@google/genai";
 
 interface Props {
   exams: Exam[];
@@ -73,7 +74,6 @@ const TeacherDashboard: React.FC<Props> = ({ exams, results, setExams }) => {
 
       {activeTab === 'EXAMS' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* New Exam Button */}
           <button 
             onClick={() => openEditor()}
             className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-slate-200 rounded-2xl hover:border-indigo-400 hover:bg-indigo-50 transition-all text-slate-400 group"
@@ -124,7 +124,6 @@ const TeacherDashboard: React.FC<Props> = ({ exams, results, setExams }) => {
                     <button className="p-2 bg-slate-100 rounded-lg hover:bg-indigo-100 text-slate-600 hover:text-indigo-600 transition-colors">
                       <QrCode className="w-5 h-5" />
                     </button>
-                    {/* Tooltip with QR */}
                     <div className="hidden group-hover:block absolute bottom-full right-0 mb-2 p-4 bg-white shadow-2xl rounded-xl border border-slate-200 z-50 w-48 text-center">
                       <p className="text-[10px] font-bold text-slate-700 mb-2">Scan untuk Mengerjakan</p>
                       <div className="flex justify-center mb-2">
@@ -197,7 +196,6 @@ const TeacherDashboard: React.FC<Props> = ({ exams, results, setExams }) => {
         </div>
       )}
 
-      {/* Exam Editor Modal */}
       {showEditor && editingExam && (
         <ExamEditor 
           exam={editingExam} 
@@ -209,9 +207,61 @@ const TeacherDashboard: React.FC<Props> = ({ exams, results, setExams }) => {
   );
 };
 
-// Internal component for Editing
 const ExamEditor: React.FC<{ exam: Exam, onSave: (e: Exam) => void, onClose: () => void }> = ({ exam, onSave, onClose }) => {
   const [data, setData] = useState<Exam>(exam);
+  const [isAIGenerating, setIsAIGenerating] = useState(false);
+
+  const handleAIGenerateQuestion = async () => {
+    const topic = prompt("Masukkan topik atau materi untuk pembuatan soal otomatis (contoh: Perkembangbiakan Hewan):");
+    if (!topic) return;
+
+    setIsAIGenerating(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Generate satu soal ujian berkualitas tinggi tentang "${topic}" dalam Bahasa Indonesia. 
+        Format harus JSON sesuai dengan struktur: 
+        {
+          "type": "SINGLE_CHOICE" | "COMPLEX_CHOICE" | "SHORT_ANSWER" | "TRUE_FALSE",
+          "prompt": "teks pertanyaan",
+          "options": ["opsi1", "opsi2", "opsi3", "opsi4"],
+          "correctAnswer": "jawaban yang benar",
+          "weight": angka 1-10
+        }`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              type: { type: Type.STRING },
+              prompt: { type: Type.STRING },
+              options: { type: Type.ARRAY, items: { type: Type.STRING } },
+              correctAnswer: { type: Type.STRING },
+              weight: { type: Type.NUMBER }
+            },
+            required: ["type", "prompt", "correctAnswer", "weight"]
+          }
+        }
+      });
+
+      const generatedData = JSON.parse(response.text || '{}');
+      const newQ: Question = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: generatedData.type as QuestionType,
+        prompt: generatedData.prompt,
+        options: generatedData.options || ['Opsi 1', 'Opsi 2', 'Opsi 3', 'Opsi 4'],
+        correctAnswer: generatedData.correctAnswer,
+        weight: generatedData.weight || 1
+      };
+      setData({ ...data, questions: [...data.questions, newQ] });
+    } catch (err) {
+      console.error(err);
+      alert("Gagal membuat soal dengan AI. Pastikan API_KEY sudah benar.");
+    } finally {
+      setIsAIGenerating(false);
+    }
+  };
 
   const addQuestion = () => {
     if (data.questions.length >= 500) {
@@ -222,7 +272,7 @@ const ExamEditor: React.FC<{ exam: Exam, onSave: (e: Exam) => void, onClose: () 
       id: Math.random().toString(36).substr(2, 9),
       type: QuestionType.SINGLE_CHOICE,
       prompt: '',
-      options: ['Opsi 1', 'Opsi 2'],
+      options: ['Opsi 1', 'Opsi 2', 'Opsi 3', 'Opsi 4'],
       correctAnswer: '',
       weight: 1
     };
@@ -263,7 +313,6 @@ const ExamEditor: React.FC<{ exam: Exam, onSave: (e: Exam) => void, onClose: () 
         </div>
 
         <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-slate-50">
-          {/* Header Info */}
           <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-4">
               <div>
@@ -297,19 +346,27 @@ const ExamEditor: React.FC<{ exam: Exam, onSave: (e: Exam) => void, onClose: () 
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-indigo-600 font-bold" 
                 />
               </div>
-              <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-xl border border-amber-100">
-                <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
-                <p className="text-xs text-amber-700">Maksimal soal adalah 500. Setiap soal memiliki bobot nilai kustom.</p>
+              <div className="flex items-center gap-3 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+                <Sparkles className="w-5 h-5 text-indigo-500 shrink-0" />
+                <p className="text-xs text-indigo-700 font-medium">Gunakan bantuan AI untuk membuat soal secara otomatis berdasarkan topik materi.</p>
               </div>
             </div>
           </section>
 
-          {/* Questions */}
           <div className="space-y-4">
-            <h3 className="text-lg font-bold text-slate-800 flex items-center justify-between">
-              Konten Pertanyaan
-              <span className="text-xs font-medium text-slate-400">{data.questions.length} / 500</span>
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-800">Konten Pertanyaan</h3>
+              <div className="flex gap-2">
+                <button 
+                  onClick={handleAIGenerateQuestion}
+                  disabled={isAIGenerating}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-50 transition-all shadow-sm disabled:opacity-50"
+                >
+                  {isAIGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                  Generate dengan AI
+                </button>
+              </div>
+            </div>
 
             {data.questions.map((q, idx) => (
               <div key={q.id} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 relative group">
@@ -355,9 +412,7 @@ const ExamEditor: React.FC<{ exam: Exam, onSave: (e: Exam) => void, onClose: () 
                   </div>
                 </div>
 
-                {/* Sub-Editor based on type */}
                 <div className="mt-4 p-4 bg-slate-50 rounded-xl">
-                   {/* This is simplified for space, usually you'd have more elaborate inputs here */}
                    {(q.type === QuestionType.SINGLE_CHOICE || q.type === QuestionType.COMPLEX_CHOICE) && (
                      <div className="space-y-2">
                         {q.options?.map((opt, oIdx) => (
@@ -475,7 +530,7 @@ const ExamEditor: React.FC<{ exam: Exam, onSave: (e: Exam) => void, onClose: () 
               onClick={addQuestion}
               className="w-full py-4 border-2 border-dashed border-slate-300 rounded-2xl flex items-center justify-center gap-2 text-slate-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-white transition-all font-bold"
             >
-              <Plus className="w-5 h-5" /> Tambah Pertanyaan
+              <Plus className="w-5 h-5" /> Tambah Pertanyaan Manual
             </button>
           </div>
         </div>
