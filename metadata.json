@@ -1,0 +1,7 @@
+{
+  "name": "Sistem Ujian Online Pro",
+  "description": "Platform ujian online komprehensif untuk guru dan siswa dengan fitur lockdown mode, QR code, dan berbagai tipe soal.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
